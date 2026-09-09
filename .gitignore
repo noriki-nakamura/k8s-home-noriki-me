@@ -9,3 +9,9 @@ Proxmox-Terraform/terraform.tfstate
 Proxmox-Terraform/terraform.tfstate.backup
 Proxmox-Terraform/terraform.tfvars
 Proxmox-Terraform/*.tfplan
+
+# ref/ 配下のスクリーンショットは、ブラウザのブックマーク/アバターや
+# 本プロジェクトと無関係な他VM・他ネットワークゾーンなど、
+# ホームラボ全体の情報が写り込んでいるため公開リポジトリには含めない。
+# （ローカルの個人的な作業記録として手元に残すのみ）
+ref/
