@@ -1,0 +1,48 @@
+---
+# Kubernetes HA クラスタ構築 一括実行 Playbook（ノードプロビジョニング専任）
+# 実行例: cd VM-Ansible && ansible-playbook playbooks/site.yml
+#
+# クラスタ内リソース（Cilium, NFS CSI等）は対象外。
+# Local-Ansible/playbooks/setup.yml → k8scluster-Manifest 配下のスクリプトで
+# kubectl/helm/cilium CLI から直接管理する。
+
+- name: 全ノード共通セットアップ
+  hosts: k8s_cluster
+  roles:
+    - common
+
+- name: コンテナランタイム（containerd）セットアップ
+  hosts: k8s_cluster
+  roles:
+    - container_runtime
+
+- name: kubeadm / kubelet / kubectl インストール
+  hosts: k8s_cluster
+  roles:
+    - kubernetes_packages
+
+- name: kube-vip static pod を全コントロールプレーンノードへ配置
+  hosts: control_plane
+  roles:
+    - kube_vip
+
+- name: 最初のコントロールプレーンノードで kubeadm init
+  hosts: "{{ groups['control_plane'][0] }}"
+  roles:
+    - control_plane_init
+
+- name: 残りのコントロールプレーンノードを join
+  hosts: "{{ groups['control_plane'][1:] }}"
+  serial: 1
+  roles:
+    - control_plane_join
+
+- name: ワーカーノードを join
+  hosts: workers
+  roles:
+    - workers_join
+
+- name: NFS クライアントセットアップ（永続化ストレージ用）
+  hosts: k8s_cluster
+  roles:
+    - nfs_client

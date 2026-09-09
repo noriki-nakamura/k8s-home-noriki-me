@@ -1,0 +1,6 @@
+---
+- name: ワーカーとして join（初回のみ・冪等）
+  ansible.builtin.command: "{{ hostvars[groups['control_plane'][0]]['worker_join_command'] }}"
+  args:
+    creates: /etc/kubernetes/kubelet.conf
+  register: worker_join_result

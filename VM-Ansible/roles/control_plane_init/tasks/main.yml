@@ -1,0 +1,139 @@
+---
+# このロールは最初の1台のコントロールプレーンノード（例: k8s-cp-01）にのみ適用する。
+
+- name: kubeadm-config.yaml を生成
+  ansible.builtin.template:
+    src: kubeadm-config.yaml.j2
+    dest: /etc/kubernetes/kubeadm-config.yaml
+    owner: root
+    group: root
+    mode: "0600"
+
+# admin.conf が実行前から存在していたかを明示的に確認する。
+# async(poll:0) + creates の組み合わせは、creates条件でスキップされる場合でも
+# ansible_job_id を返す等 changed 判定が信頼できないことがあるため、
+# 後続タスクの when 条件にはこちらを使う。
+- name: admin.conf が既に存在するか確認
+  ansible.builtin.stat:
+    path: /etc/kubernetes/admin.conf
+  register: admin_conf_stat
+
+# kubeadm 1.31以降、admin.conf の Organization は system:masters ではなく
+# kubeadm:cluster-admins になった。このグループへの cluster-admin バインディングは
+# kubeadm init 完了時に作成されるが、wait-control-plane フェーズ（api-check）の
+# 段階では admin.conf にまだ十分な権限が無く、admin.conf をマウントする kube-vip が
+# リーダー選出に失敗してVIPが機能しない。結果、VIP経由のヘルスチェックがタイムアウト
+# する「鶏と卵」問題が起きる。これを避けるため kubeadm init を非同期実行し、
+# 完了を待つ間に super-admin.conf（system:masters相当）経由で先に必要な権限を作る。
+- name: kubeadm init を非同期実行（初回のみ・冪等）
+  ansible.builtin.command: >
+    kubeadm init
+    --config=/etc/kubernetes/kubeadm-config.yaml
+    --upload-certs
+    {{ '--skip-phases=addon/kube-proxy' if cilium_kube_proxy_replacement else '' }}
+  args:
+    creates: /etc/kubernetes/admin.conf
+  async: 600
+  poll: 0
+  register: kubeadm_init_async
+  when: not admin_conf_stat.stat.exists
+
+- name: super-admin.conf が生成されるまで待機
+  ansible.builtin.wait_for:
+    path: /etc/kubernetes/super-admin.conf
+    timeout: 120
+  when: not admin_conf_stat.stat.exists
+
+# super-admin.conf自体はetcd/apiserver起動前のkubeconfigフェーズで書き出されるため、
+# ファイルの存在だけでは不十分。APIサーバーがポート6443で応答するまで待つ。
+- name: kube-apiserver がポート {{ apiserver_port }} で応答するまで待機
+  ansible.builtin.wait_for:
+    host: "{{ ansible_host }}"
+    port: "{{ apiserver_port }}"
+    timeout: 180
+  when: not admin_conf_stat.stat.exists
+
+- name: kubeadm:cluster-admins グループに cluster-admin をバインド
+  ansible.builtin.command: >
+    kubectl --kubeconfig=/etc/kubernetes/super-admin.conf
+    --server=https://{{ ansible_host }}:{{ apiserver_port }}
+    create clusterrolebinding kubeadm-cluster-admins
+    --clusterrole=cluster-admin --group=kubeadm:cluster-admins
+  register: crb_result
+  failed_when: crb_result.rc != 0 and 'AlreadyExists' not in crb_result.stderr
+  changed_when: crb_result.rc == 0
+  retries: 10
+  delay: 5
+  until: crb_result.rc == 0 or 'AlreadyExists' in crb_result.stderr
+  when: not admin_conf_stat.stat.exists
+
+- name: kube-vip 用 RBAC を先行適用（super-admin.conf使用）
+  ansible.builtin.command: >
+    kubectl --kubeconfig=/etc/kubernetes/super-admin.conf
+    --server=https://{{ ansible_host }}:{{ apiserver_port }}
+    apply -f https://kube-vip.io/manifests/rbac.yaml
+  register: kube_vip_rbac_early_result
+  retries: 10
+  delay: 5
+  until: kube_vip_rbac_early_result.rc == 0
+  when: not admin_conf_stat.stat.exists
+
+- name: kubeadm init の完了を待機
+  ansible.builtin.async_status:
+    jid: "{{ kubeadm_init_async.ansible_job_id }}"
+  register: kubeadm_init_result
+  until: kubeadm_init_result.finished
+  retries: 60
+  delay: 10
+  when: not admin_conf_stat.stat.exists
+
+- name: root 用 .kube ディレクトリを作成
+  ansible.builtin.file:
+    path: /root/.kube
+    state: directory
+    mode: "0700"
+
+- name: root 用 kubeconfig を配置
+  ansible.builtin.copy:
+    src: /etc/kubernetes/admin.conf
+    dest: /root/.kube/config
+    remote_src: true
+    mode: "0600"
+
+- name: ログイン用ユーザーの .kube ディレクトリを作成
+  ansible.builtin.file:
+    path: "/home/{{ ansible_user }}/.kube"
+    state: directory
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: "0700"
+  when: ansible_user != 'root'
+
+- name: ログイン用ユーザーに kubeconfig を配置
+  ansible.builtin.copy:
+    src: /etc/kubernetes/admin.conf
+    dest: "/home/{{ ansible_user }}/.kube/config"
+    remote_src: true
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: "0600"
+  when: ansible_user != 'root'
+
+- name: ワーカー用 join コマンドを取得
+  ansible.builtin.command: kubeadm token create --print-join-command
+  register: worker_join_command
+  changed_when: false
+
+- name: コントロールプレーン join 用の certificate-key を再発行
+  ansible.builtin.command: kubeadm init phase upload-certs --upload-certs
+  register: cp_certificate_key_raw
+  changed_when: true
+
+- name: certificate-key を抽出
+  ansible.builtin.set_fact:
+    cp_certificate_key: "{{ cp_certificate_key_raw.stdout_lines[-1] }}"
+
+- name: join コマンドをクラスタ全体で参照できる fact として保存
+  ansible.builtin.set_fact:
+    worker_join_command: "{{ worker_join_command.stdout }}"
+    control_plane_join_command: "{{ worker_join_command.stdout }} --control-plane --certificate-key {{ cp_certificate_key }}"

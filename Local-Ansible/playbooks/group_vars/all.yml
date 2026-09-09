@@ -1,0 +1,11 @@
+---
+# Local-Ansible 固有の変数（kubeconfig取得先、CLIツールのバージョン）
+# ノードの接続情報自体は VM-Ansible/inventory を共有している。
+
+helm_version: "4.2.4"
+cilium_cli_version: "0.16.22"
+
+# kubeconfig の保存先。k8sノードに管理手段を依存させないよう、
+# Ansible実行ホスト（このマシン）に保存し、以降の管理操作はここから行う。
+# 既存の ~/.kube/config を上書きしないよう専用ファイルに分離している。
+local_kubeconfig_path: "{{ lookup('env', 'HOME') }}/.kube/config-{{ cluster_name }}"

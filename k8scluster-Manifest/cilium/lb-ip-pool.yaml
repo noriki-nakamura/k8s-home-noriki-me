@@ -1,0 +1,8 @@
+apiVersion: cilium.io/v2alpha1
+kind: CiliumLoadBalancerIPPool
+metadata:
+  name: default-pool
+spec:
+  blocks:
+    # 既存の固定IP割当（.1, .10-.13, .21-.22）と非重複
+    - cidr: "10.32.192.128/25"

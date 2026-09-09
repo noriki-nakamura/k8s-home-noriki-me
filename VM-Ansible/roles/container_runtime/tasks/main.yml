@@ -1,0 +1,65 @@
+---
+- name: 作業用ディレクトリを作成
+  ansible.builtin.file:
+    path: /usr/local/bin
+    state: directory
+    mode: "0755"
+
+- name: containerd tarball をダウンロード・展開
+  ansible.builtin.unarchive:
+    src: "https://github.com/containerd/containerd/releases/download/v{{ containerd_version }}/containerd-{{ containerd_version }}-linux-amd64.tar.gz"
+    dest: /usr/local
+    remote_src: true
+    creates: /usr/local/bin/containerd
+
+- name: containerd の systemd unit を配置
+  ansible.builtin.get_url:
+    url: https://raw.githubusercontent.com/containerd/containerd/v{{ containerd_version }}/containerd.service
+    dest: /etc/systemd/system/containerd.service
+    mode: "0644"
+
+- name: runc をダウンロード
+  ansible.builtin.get_url:
+    url: "https://github.com/opencontainers/runc/releases/download/v{{ runc_version }}/runc.amd64"
+    dest: /usr/local/sbin/runc
+    mode: "0755"
+
+- name: CNI plugins 用ディレクトリを作成
+  ansible.builtin.file:
+    path: /opt/cni/bin
+    state: directory
+    mode: "0755"
+
+- name: CNI plugins をダウンロード・展開
+  ansible.builtin.unarchive:
+    src: "https://github.com/containernetworking/plugins/releases/download/v{{ cni_plugins_version }}/cni-plugins-linux-amd64-v{{ cni_plugins_version }}.tgz"
+    dest: /opt/cni/bin
+    remote_src: true
+    creates: /opt/cni/bin/loopback
+
+- name: containerd 設定ディレクトリを作成
+  ansible.builtin.file:
+    path: /etc/containerd
+    state: directory
+    mode: "0755"
+
+- name: containerd デフォルト設定を生成
+  ansible.builtin.command: /usr/local/bin/containerd config default
+  register: containerd_default_config
+  changed_when: false
+
+- name: containerd config.toml を配置（SystemdCgroup 有効化）
+  ansible.builtin.copy:
+    dest: /etc/containerd/config.toml
+    content: "{{ containerd_default_config.stdout | regex_replace('SystemdCgroup = false', 'SystemdCgroup = true') }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: containerd を再起動
+
+- name: containerd を有効化・起動
+  ansible.builtin.systemd:
+    name: containerd
+    daemon_reload: true
+    enabled: true
+    state: started

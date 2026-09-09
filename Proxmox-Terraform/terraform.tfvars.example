@@ -1,0 +1,8 @@
+# このファイルをコピーして terraform.tfvars を作成し、実際の値を入れてください。
+# terraform.tfvars 自体は .gitignore 対象です。
+
+proxmox_endpoint  = "https://pve01.home.noriki.me:8006"
+proxmox_api_token = "terraform@pve!automation=00000000-0000-0000-0000-000000000000"
+proxmox_insecure  = true
+
+ssh_public_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA... your-comment"

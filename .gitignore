@@ -1,0 +1,11 @@
+*.retry
+.vault_pass
+*.log
+.envrc
+
+# Terraform
+Proxmox-Terraform/.terraform/
+Proxmox-Terraform/terraform.tfstate
+Proxmox-Terraform/terraform.tfstate.backup
+Proxmox-Terraform/terraform.tfvars
+Proxmox-Terraform/*.tfplan

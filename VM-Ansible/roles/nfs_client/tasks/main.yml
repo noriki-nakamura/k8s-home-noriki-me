@@ -1,0 +1,5 @@
+---
+- name: NFS クライアントパッケージをインストール
+  ansible.builtin.dnf:
+    name: nfs-utils
+    state: present

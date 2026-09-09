@@ -1,0 +1,183 @@
+---
+- name: ホスト名を設定
+  ansible.builtin.hostname:
+    name: "{{ inventory_hostname }}"
+
+- name: 全ノードの /etc/hosts を配布
+  ansible.builtin.template:
+    src: hosts.j2
+    dest: /etc/hosts
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: タイムゾーンを設定
+  community.general.timezone:
+    name: "{{ timezone }}"
+
+- name: chrony をインストール
+  ansible.builtin.dnf:
+    name: chrony
+    state: present
+
+- name: chrony.conf を配布
+  ansible.builtin.template:
+    src: chrony.conf.j2
+    dest: /etc/chrony.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: chronyd を再起動
+
+- name: chronyd を有効化・起動
+  ansible.builtin.systemd:
+    name: chronyd
+    enabled: true
+    state: started
+
+- name: 必須パッケージをインストール
+  ansible.builtin.dnf:
+    name:
+      - curl
+      - wget
+      - vim-enhanced
+      - tar
+      - iproute-tc
+      - socat
+      - conntrack-tools
+      - container-selinux
+      - policycoreutils-python-utils
+      - python3-libselinux
+    state: present
+
+- name: swap を無効化（現在稼働中のswap）
+  ansible.builtin.command: swapoff -a
+  when: ansible_swaptotal_mb > 0
+  changed_when: true
+
+- name: /etc/fstab の swap 行をコメントアウト
+  ansible.builtin.replace:
+    path: /etc/fstab
+    regexp: '^([^#].*\sswap\s.*)$'
+    replace: '# \1'
+
+- name: SELinux を Permissive に設定
+  ansible.posix.selinux:
+    state: "{{ selinux_state }}"
+    policy: targeted
+  when: selinux_state is defined
+
+- name: br_netfilter を含む kernel-modules-extra をインストール
+  ansible.builtin.dnf:
+    name: kernel-modules-extra
+    state: present
+
+- name: インストール済みの最新カーネルバージョンを確認
+  ansible.builtin.shell: |
+    set -o pipefail
+    rpm -q kernel-core --qf '%{version}-%{release}.%{arch}\n' | sort -V | tail -n1
+  args:
+    executable: /bin/bash
+  register: latest_installed_kernel
+  changed_when: false
+
+- name: 稼働中カーネルと最新インストール済みカーネルが異なる場合は再起動
+  ansible.builtin.reboot:
+    reboot_timeout: 300
+  when: ansible_kernel != latest_installed_kernel.stdout
+
+- name: kubernetes 用カーネルモジュール設定ファイルを配布
+  ansible.builtin.copy:
+    dest: /etc/modules-load.d/k8s.conf
+    content: |
+      overlay
+      br_netfilter
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: overlay / br_netfilter モジュールをロード
+  community.general.modprobe:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - overlay
+    - br_netfilter
+
+- name: kubernetes 用 sysctl を設定
+  ansible.posix.sysctl:
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
+    sysctl_file: /etc/sysctl.d/99-kubernetes-cri.conf
+    reload: true
+  loop:
+    - { name: "net.bridge.bridge-nf-call-iptables", value: "1" }
+    - { name: "net.bridge.bridge-nf-call-ip6tables", value: "1" }
+    - { name: "net.ipv4.ip_forward", value: "1" }
+
+- name: firewalld がインストールされていることを確認
+  ansible.builtin.dnf:
+    name: firewalld
+    state: present
+
+- name: firewalld を有効化・起動
+  ansible.builtin.systemd:
+    name: firewalld
+    enabled: true
+    state: started
+
+- name: firewalld デーモンの応答を待機
+  ansible.builtin.command: firewall-cmd --state
+  register: firewalld_state
+  until: firewalld_state.rc == 0
+  retries: 10
+  delay: 2
+  changed_when: false
+
+- name: 共通の firewalld ルールを適用
+  ansible.posix.firewalld:
+    port: "{{ item }}"
+    permanent: true
+    immediate: true
+    state: enabled
+  loop:
+    - 10250/tcp # kubelet API
+
+- name: Cilium (VXLAN) 用ポートを許可
+  ansible.posix.firewalld:
+    port: "8472/udp"
+    permanent: true
+    immediate: true
+    state: enabled
+
+- name: Cilium ヘルスチェック用ポートを許可
+  ansible.posix.firewalld:
+    port: "{{ item }}"
+    permanent: true
+    immediate: true
+    state: enabled
+  loop:
+    - 4240/tcp
+    - 4244/tcp
+    - 4245/tcp
+
+- name: コントロールプレーン用 firewalld ルールを適用
+  ansible.posix.firewalld:
+    port: "{{ item }}"
+    permanent: true
+    immediate: true
+    state: enabled
+  loop:
+    - 6443/tcp # kube-apiserver
+    - 2379-2380/tcp # etcd
+    - 10259/tcp # kube-scheduler
+    - 10257/tcp # kube-controller-manager
+  when: node_role == 'control_plane'
+
+- name: ワーカー用 firewalld ルールを適用（NodePort レンジ）
+  ansible.posix.firewalld:
+    port: "30000-32767/tcp"
+    permanent: true
+    immediate: true
+    state: enabled
+  when: node_role == 'workers'

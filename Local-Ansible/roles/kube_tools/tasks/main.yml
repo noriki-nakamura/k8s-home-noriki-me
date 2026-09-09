@@ -1,0 +1,31 @@
+---
+# Ansible実行ホスト（localhost）に、クラスタ管理用CLIをインストールする。
+# k8sノードに転送して実行する方式は対象ノードが壊れた際のリスクになるため、
+# 以降の管理操作（Cilium/Helm等）はこのホストから直接行う方針にしている。
+
+- name: ユーザーローカルbinディレクトリを作成
+  ansible.builtin.file:
+    path: "{{ lookup('env', 'HOME') }}/.local/bin"
+    state: directory
+    mode: "0755"
+
+- name: Helm バイナリをダウンロード・展開
+  ansible.builtin.unarchive:
+    src: "https://get.helm.sh/helm-v{{ helm_version }}-linux-amd64.tar.gz"
+    dest: /tmp
+    remote_src: true
+    creates: /tmp/linux-amd64/helm
+
+- name: Helm バイナリを配置
+  ansible.builtin.copy:
+    src: /tmp/linux-amd64/helm
+    dest: "{{ lookup('env', 'HOME') }}/.local/bin/helm"
+    mode: "0755"
+    remote_src: true
+
+- name: cilium CLI をダウンロード・展開
+  ansible.builtin.unarchive:
+    src: "https://github.com/cilium/cilium-cli/releases/download/v{{ cilium_cli_version }}/cilium-linux-amd64.tar.gz"
+    dest: "{{ lookup('env', 'HOME') }}/.local/bin"
+    remote_src: true
+    creates: "{{ lookup('env', 'HOME') }}/.local/bin/cilium"

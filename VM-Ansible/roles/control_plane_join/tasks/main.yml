@@ -1,0 +1,40 @@
+---
+# このロールは 2 台目以降のコントロールプレーンノード（k8s-cp-02, k8s-cp-03）に適用する。
+
+- name: コントロールプレーンとして join（初回のみ・冪等）
+  ansible.builtin.command: "{{ hostvars[groups['control_plane'][0]]['control_plane_join_command'] }}"
+  args:
+    creates: /etc/kubernetes/kubelet.conf
+  register: cp_join_result
+
+- name: root 用 .kube ディレクトリを作成
+  ansible.builtin.file:
+    path: /root/.kube
+    state: directory
+    mode: "0700"
+
+- name: root 用 kubeconfig を配置
+  ansible.builtin.copy:
+    src: /etc/kubernetes/admin.conf
+    dest: /root/.kube/config
+    remote_src: true
+    mode: "0600"
+
+- name: ログイン用ユーザーの .kube ディレクトリを作成
+  ansible.builtin.file:
+    path: "/home/{{ ansible_user }}/.kube"
+    state: directory
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: "0700"
+  when: ansible_user != 'root'
+
+- name: ログイン用ユーザーに kubeconfig を配置
+  ansible.builtin.copy:
+    src: /etc/kubernetes/admin.conf
+    dest: "/home/{{ ansible_user }}/.kube/config"
+    remote_src: true
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: "0600"
+  when: ansible_user != 'root'

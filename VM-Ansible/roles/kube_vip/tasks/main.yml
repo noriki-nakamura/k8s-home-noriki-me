@@ -1,0 +1,17 @@
+---
+# kubeadm init/join 実行前に、全コントロールプレーンノードへ kube-vip の static pod manifest を配置する。
+# admin.conf がまだ存在しない時点では FileOrCreate により空ファイルがマウントされ、
+# kubeadm init/join 完了後に実体が反映されて VIP が有効化される。
+- name: kubernetes manifests ディレクトリを作成
+  ansible.builtin.file:
+    path: /etc/kubernetes/manifests
+    state: directory
+    mode: "0755"
+
+- name: kube-vip static pod manifest を配置
+  ansible.builtin.template:
+    src: kube-vip.yaml.j2
+    dest: /etc/kubernetes/manifests/kube-vip.yaml
+    owner: root
+    group: root
+    mode: "0644"

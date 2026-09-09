@@ -1,0 +1,47 @@
+---
+# kubeconfig取得 + クラスタ管理用CLIツール(Helm, cilium CLI)のセットアップ
+# 実行例: cd Local-Ansible && ansible-playbook playbooks/setup.yml
+#
+# VM-Ansible でクラスタを構築した後、一度だけ実行する。
+# 以降の Cilium/NFS CSI 等のインストールは k8scluster-Manifest 配下の
+# スクリプト・マニフェストを kubectl/helm で直接適用する。
+
+- name: kubeconfig を Ansible 実行ホストに取得
+  hosts: "{{ groups['control_plane'][0] }}"
+  become: true
+  tasks:
+    - name: admin.conf の存在を確認
+      ansible.builtin.stat:
+        path: /etc/kubernetes/admin.conf
+      register: remote_admin_conf_stat
+
+    - name: kubeconfig 保存用ディレクトリを作成
+      ansible.builtin.file:
+        path: "{{ local_kubeconfig_path | dirname }}"
+        state: directory
+        mode: "0700"
+      delegate_to: localhost
+      become: false
+      run_once: true
+
+    - name: admin.conf を Ansible 実行ホストに取得
+      ansible.builtin.fetch:
+        src: /etc/kubernetes/admin.conf
+        dest: "{{ local_kubeconfig_path }}"
+        flat: true
+      when: remote_admin_conf_stat.stat.exists
+
+    - name: kubeconfig のパーミッションを制限
+      ansible.builtin.file:
+        path: "{{ local_kubeconfig_path }}"
+        mode: "0600"
+      delegate_to: localhost
+      become: false
+      run_once: true
+
+- name: クラスタ管理用 CLI ツール（Helm, cilium）をインストール
+  hosts: localhost
+  connection: local
+  become: false
+  roles:
+    - kube_tools

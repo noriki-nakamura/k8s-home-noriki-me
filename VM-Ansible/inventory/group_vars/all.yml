@@ -1,0 +1,48 @@
+---
+# ===== クラスタ基本情報 =====
+cluster_name: home-k8s
+
+# kubeadm / kubelet / kubectl のマイナーバージョン（pkgs.k8s.io のリポジトリはマイナー単位で分かれる）
+# 事前に https://kubernetes.io/releases/ で当時の最新安定版を確認して合わせること
+k8s_minor_version: "1.31"
+# 上記マイナーバージョン内の固定パッチバージョン（空文字なら最新パッチが入る）
+k8s_package_version: ""
+
+# ===== ネットワーク =====
+# k8s 専用 VLAN 上のノードネットワーク（Proxmox 側で VLAN タグ付けした bridge に接続する前提）
+pod_subnet: "10.244.0.0/16"
+service_subnet: "10.96.0.0/12"
+
+# kube-vip が広報する Control Plane API 用 VIP（ノードと同一L2、DHCP範囲外の未使用IPを指定）
+control_plane_vip: "10.32.192.10"
+control_plane_vip_interface: "eth0"
+apiserver_port: 6443
+control_plane_endpoint: "{{ control_plane_vip }}:{{ apiserver_port }}"
+
+# ===== コンテナランタイム =====
+# ディストリのDockerリポジトリがRHEL10系に未対応な時期があるため、
+# GitHub Releases のバイナリを直接展開する方式を採用（OSバージョン差異の影響を受けにくい）
+containerd_version: "1.7.24"
+runc_version: "1.2.3"
+cni_plugins_version: "1.9.1"
+
+# ===== kube-vip =====
+kube_vip_version: "0.8.7"
+
+# CNI(Cilium)・NFS CSI・LoadBalancer(L2 Announcements)・Helmのインストールは
+# このプロジェクトではAnsibleの管轄外にしている。
+# 対応する設定値は k8scluster-Manifest 配下のスクリプト・マニフェストに直接
+# 記載しているので、変更する場合はそちらを編集すること
+# （理由: kubectl apply/helm upgrade --install は既に宣言的で冪等な操作であり、
+#  Ansibleでラップすると changed_when 判定を手動実装する必要が生じ、
+#  Helm/kubectlが本来持つ冪等性の仕組みを劣化コピーすることになるため）。
+
+# ===== OS 共通設定 =====
+# kubeadm 公式手順に準拠し Permissive を既定とする。
+# enforcing のまま運用したい場合は container-selinux のポリシー適用状況を
+# 個別に検証した上で "enforcing" に変更すること。
+selinux_state: permissive
+timezone: Asia/Tokyo
+ntp_servers:
+  - ntp.nict.jp
+  - ntp.jst.mfeed.ad.jp
