@@ -1,0 +1,25 @@
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-dns01
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: noriki.nakamura.0424@gmail.com
+    privateKeySecretRef:
+      name: letsencrypt-dns01-account-key
+    solvers:
+      - dns01:
+          route53:
+            region: us-east-1
+            # 事前に `kubectl create secret generic route53-credentials` で
+            # cert-manager namespace に作成しておく（README参照、値はgit管理しない）
+            accessKeyIDSecretRef:
+              name: route53-credentials
+              key: access-key-id
+            secretAccessKeySecretRef:
+              name: route53-credentials
+              key: secret-access-key
+            # 対象ドメインのHosted Zone IDが分かっている場合は指定すると
+            # IAM権限を route53:ListHostedZonesByName 抜きに絞れる（任意）
+            # hostedZoneID: "XXXXXXXXXXXXX"

@@ -18,6 +18,8 @@ Ansibleでラップしない理由: `kubectl apply` や `helm upgrade --install`
 ## 実行順序
 
 ```bash
+export KUBECONFIG=~/.kube/config-home-k8s
+
 # 1. Cilium (CNI) インストール
 ./cilium/install.sh
 
@@ -26,6 +28,13 @@ Ansibleでラップしない理由: `kubectl apply` や `helm upgrade --install`
 
 # 3. NFS CSIドライバ + StorageClass
 ./storage/install-nfs-csi.sh
+
+# 4. HTTPS対応（Gateway API + cert-manager）。詳細は各READMEを参照
+./gateway-api/install-crds.sh
+./cilium/enable-gateway-api.sh
+kubectl apply -f gateway-api/gatewayclass.yaml
+# cert-manager/README.md の手順でワイルドカード証明書を発行してから↓
+kubectl apply -f gateway-api/gateway.yaml
 ```
 
 ## ディレクトリ構成
@@ -34,11 +43,22 @@ Ansibleでラップしない理由: `kubectl apply` や `helm upgrade --install`
 cilium/
   install.sh                    # Cilium本体のインストール
   enable-lb.sh                  # L2 Announcements有効化 + マニフェスト適用
+  enable-gateway-api.sh         # Gateway API機能の有効化
   lb-ip-pool.yaml                # CiliumLoadBalancerIPPool
   l2-announcement-policy.yaml    # CiliumL2AnnouncementPolicy
 storage/
   install-nfs-csi.sh            # csi-driver-nfs導入 + StorageClass適用
   storageclass-nfs.yaml         # StorageClass定義
+gateway-api/
+  install-crds.sh                # Gateway API CRD(v1.1.0)インストール
+  gatewayclass.yaml               # GatewayClass
+  gateway.yaml                    # Gateway（HTTPSリスナー）
+  README.md                      # HTTPRoute追加方法等の詳細
+cert-manager/
+  install.sh                     # cert-managerインストール
+  cluster-issuer.yaml            # Let's Encrypt (Route53 DNS-01) ClusterIssuer
+  wildcard-certificate.yaml      # ワイルドカード証明書リクエスト
+  README.md                      # AWS IAM準備・Secret作成手順
 ```
 
 ## 設定値を変更する場合

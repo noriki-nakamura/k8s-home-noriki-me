@@ -143,6 +143,16 @@
   loop:
     - 10250/tcp # kubelet API
 
+- name: Cilium Gateway (HTTP/HTTPS) 用ポートを許可
+  ansible.posix.firewalld:
+    port: "{{ item }}"
+    permanent: true
+    immediate: true
+    state: enabled
+  loop:
+    - 80/tcp # Cilium Gateway API (HTTP)
+    - 443/tcp # Cilium Gateway API (HTTPS)
+
 - name: Cilium (VXLAN) 用ポートを許可
   ansible.posix.firewalld:
     port: "8472/udp"

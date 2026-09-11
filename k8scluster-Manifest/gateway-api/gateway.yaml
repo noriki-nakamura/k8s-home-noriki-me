@@ -1,0 +1,20 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: home-k8s-gateway
+  namespace: default
+spec:
+  gatewayClassName: cilium
+  listeners:
+    - name: https
+      protocol: HTTPS
+      port: 443
+      hostname: "*.home.noriki.me"
+      tls:
+        certificateRefs:
+          - kind: Secret
+            # cert-manager が Certificate リソースから生成するSecret名と一致させる
+            name: wildcard-home-noriki-me-tls
+      allowedRoutes:
+        namespaces:
+          from: All
