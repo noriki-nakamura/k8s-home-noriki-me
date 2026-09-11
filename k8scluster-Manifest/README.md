@@ -35,6 +35,9 @@ export KUBECONFIG=~/.kube/config-home-k8s
 kubectl apply -f gateway-api/gatewayclass.yaml
 # cert-manager/README.md の手順でワイルドカード証明書を発行してから↓
 kubectl apply -f gateway-api/gateway.yaml
+
+# 5. Headlamp（ブラウザでのクラスタ閲覧UI）
+./headlamp/install.sh
 ```
 
 ## ディレクトリ構成
@@ -59,6 +62,11 @@ cert-manager/
   cluster-issuer.yaml            # Let's Encrypt (Route53 DNS-01) ClusterIssuer
   wildcard-certificate.yaml      # ワイルドカード証明書リクエスト
   README.md                      # AWS IAM準備・Secret作成手順
+headlamp/
+  install.sh                     # Headlampインストール + 閲覧用RBAC + HTTPRoute適用
+  viewer-rbac.yaml                # 閲覧専用ServiceAccount/RBAC/長期トークン
+  httproute.yaml                  # k8s-dashboard.home.noriki.me への公開
+  README.md                      # ログイン方法等の詳細
 ```
 
 ## 設定値を変更する場合
